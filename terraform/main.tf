@@ -262,6 +262,78 @@ resource "google_cloud_run_v2_service_iam_member" "webhook_public" {
 }
 
 # -----------------------------------------------------------------------------
+# CI/CD — Workload Identity Federation for GitHub Actions
+# -----------------------------------------------------------------------------
+# Lets GitHub Actions assume a GCP service account WITHOUT a JSON key. The
+# auth flow uses GitHub's OIDC token. We bind the workflow to a specific
+# repository via attribute_condition so other repos can't impersonate.
+
+resource "google_iam_workload_identity_pool" "github" {
+  count                     = var.github_repo == "" ? 0 : 1
+  workload_identity_pool_id = "github-pool"
+  display_name              = "GitHub Actions Pool"
+  depends_on                = [google_project_service.apis]
+}
+
+resource "google_iam_workload_identity_pool_provider" "github" {
+  count                              = var.github_repo == "" ? 0 : 1
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github[0].workload_identity_pool_id
+  workload_identity_pool_provider_id = "github-provider"
+  display_name                       = "GitHub Actions Provider"
+
+  attribute_mapping = {
+    "google.subject"       = "assertion.sub"
+    "attribute.actor"      = "assertion.actor"
+    "attribute.repository" = "assertion.repository"
+    "attribute.ref"        = "assertion.ref"
+  }
+  attribute_condition = "assertion.repository == '${var.github_repo}'"
+
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+}
+
+resource "google_service_account" "ci_deployer" {
+  count        = var.github_repo == "" ? 0 : 1
+  account_id   = "sardbot-ci-deployer"
+  display_name = "Sardbot CI deployer (GitHub Actions)"
+  depends_on   = [google_project_service.apis]
+}
+
+# Bind the GitHub repo to the CI service account via WIF.
+resource "google_service_account_iam_member" "github_wif_binding" {
+  count              = var.github_repo == "" ? 0 : 1
+  service_account_id = google_service_account.ci_deployer[0].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github[0].name}/attribute.repository/${var.github_repo}"
+}
+
+# Permissions for CI: push images, update Cloud Run resources.
+resource "google_project_iam_member" "ci_artifact_writer" {
+  count   = var.github_repo == "" ? 0 : 1
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
+  member  = "serviceAccount:${google_service_account.ci_deployer[0].email}"
+}
+
+resource "google_project_iam_member" "ci_run_admin" {
+  count   = var.github_repo == "" ? 0 : 1
+  project = var.project_id
+  role    = "roles/run.admin"
+  member  = "serviceAccount:${google_service_account.ci_deployer[0].email}"
+}
+
+# Cloud Run resources run as `sardbot-runner` SA. Updating them requires
+# `serviceAccountUser` on that runner SA — scoped narrowly, not project-wide.
+resource "google_service_account_iam_member" "ci_act_as_runner" {
+  count              = var.github_repo == "" ? 0 : 1
+  service_account_id = google_service_account.sardbot.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.ci_deployer[0].email}"
+}
+
+# -----------------------------------------------------------------------------
 # Cloud Scheduler — daily trigger at 00:05 UTC (after BTC daily candle closes)
 # -----------------------------------------------------------------------------
 resource "google_service_account" "scheduler" {

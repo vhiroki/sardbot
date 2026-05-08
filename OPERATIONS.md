@@ -188,31 +188,64 @@ Substitua `<REGION>`, `<JOB>` e `<PROJECT_ID>` pelos seus valores antes de abrir
 
 ## 5. Atualizar código / estratégia
 
-Workflow padrão pra deploy de mudanças:
+### Caminho normal: GitHub Actions (automático)
+
+Push pra `main` no GitHub aciona deploy automático. Workflow em
+`.github/workflows/deploy.yml` faz:
+
+1. Roda `pytest` (deploy bloqueado se algum teste falhar)
+2. Build + push da imagem com tag = commit SHA
+3. Atualiza Cloud Run Job pra usar a nova imagem
+4. Atualiza Cloud Run Service (webhook) pra usar a nova imagem
 
 ```bash
-# 1. Mexer no código localmente, rodar testes
-uv run pytest
+# Workflow do dia-a-dia:
+git add ...
+git commit -m "..."
+git push origin main
+# CI dispara automaticamente. Acompanhe em:
+#   https://github.com/<owner>/<repo>/actions
+```
 
-# 2. Build da imagem (--platform=linux/amd64 obrigatório no Mac M1/M2)
+CI **não** dispara em mudanças que só tocam `*.md`, `terraform/`, ou outros
+arquivos não-code. Veja o filtro `paths:` no workflow.
+
+### Trigger manual
+
+```bash
+gh workflow run deploy --repo <owner>/<repo>
+```
+
+Ou via UI do GitHub: aba Actions → Deploy → Run workflow.
+
+### Caminho de emergência: deploy manual (sem CI)
+
+Se o CI estiver quebrado e você precisa deployar agora:
+
+```bash
+# 1. Build local
 docker build --platform=linux/amd64 -t sardbot:latest .
 
-# 3. Tag e push pro Artifact Registry
-docker tag sardbot:latest \
-  ${IMAGE}
-docker push \
-  ${IMAGE}
+# 2. Push pro Artifact Registry
+docker tag sardbot:latest ${IMAGE}
+docker push ${IMAGE}
 
-# 4. Forçar Cloud Run Job a usar a nova imagem
-#    (o job aponta pra ":latest" mas precisa update pra criar nova revisão)
-gcloud run jobs update ${JOB} --region=${REGION} \
-  --image=${IMAGE}
+# 3. Atualizar Cloud Run Job
+gcloud run jobs update ${JOB} --region=${REGION} --image=${IMAGE}
 
-# 5. Testar com run manual antes de deixar o scheduler
+# 4. Atualizar Cloud Run Service
+gcloud run services update ${WEBHOOK} --region=${REGION} --image=${IMAGE}
+
+# 5. Verificar
 gcloud run jobs execute ${JOB} --region=${REGION} --wait
-
-# 6. Verificar logs e estado
 gcloud storage cat gs://${BUCKET}/state.json | python3 -m json.tool
+```
+
+### Logs do CI
+
+```bash
+gh run list --workflow=deploy.yml --repo <owner>/<repo> --limit=5
+gh run view <RUN_ID> --log --repo <owner>/<repo>
 ```
 
 ### Atualizações que mudam infra (não só código)

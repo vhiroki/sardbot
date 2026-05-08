@@ -1,0 +1,95 @@
+name: Deploy
+
+# Triggers a build + deploy on every push to main that touches code, the
+# Dockerfile, dependencies, or this workflow itself. README/docs-only changes
+# don't trigger deployment.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "Dockerfile"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:  # allow manual run from GitHub UI
+
+permissions:
+  contents: read
+  id-token: write  # required for Workload Identity Federation
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.14"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests
+        run: uv run pytest -v
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        name: Authenticate to GCP via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.CI_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        env:
+          IMAGE_BASE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/sardbot/sardbot
+        run: |
+          set -e
+          docker build --platform=linux/amd64 \
+            -t "$IMAGE_BASE:$GITHUB_SHA" \
+            -t "$IMAGE_BASE:latest" \
+            .
+          docker push "$IMAGE_BASE:$GITHUB_SHA"
+          docker push "$IMAGE_BASE:latest"
+
+      - name: Update Cloud Run Job
+        env:
+          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/sardbot/sardbot:${{ github.sha }}
+        run: |
+          gcloud run jobs update sardbot-paper-trade \
+            --region=${{ vars.GCP_REGION }} \
+            --image="$IMAGE"
+
+      - name: Update Cloud Run Service (webhook)
+        env:
+          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/sardbot/sardbot:${{ github.sha }}
+        run: |
+          gcloud run services update sardbot-webhook \
+            --region=${{ vars.GCP_REGION }} \
+            --image="$IMAGE"
+
+      - name: Summary
+        run: |
+          echo "✅ Deployed commit $GITHUB_SHA" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Job: sardbot-paper-trade @ ${{ vars.GCP_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Service: sardbot-webhook @ ${{ vars.GCP_REGION }}" >> $GITHUB_STEP_SUMMARY

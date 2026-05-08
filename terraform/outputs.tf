@@ -27,3 +27,13 @@ output "webhook_url" {
   value       = google_cloud_run_v2_service.webhook.uri
   description = "Telegram webhook URL — register with setWebhook"
 }
+
+output "wif_provider" {
+  value       = var.github_repo == "" ? null : google_iam_workload_identity_pool_provider.github[0].name
+  description = "Full WIF provider resource path — set as GitHub repo variable WIF_PROVIDER"
+}
+
+output "ci_service_account" {
+  value       = var.github_repo == "" ? null : google_service_account.ci_deployer[0].email
+  description = "CI service account email — set as GitHub repo variable CI_SERVICE_ACCOUNT"
+}

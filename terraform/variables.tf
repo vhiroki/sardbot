@@ -14,3 +14,9 @@ variable "image_tag" {
   type        = string
   default     = "latest"
 }
+
+variable "github_repo" {
+  description = "GitHub repository in 'owner/name' format (used for Workload Identity Federation binding). Empty string disables CI setup."
+  type        = string
+  default     = ""
+}

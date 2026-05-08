@@ -1,6 +1,9 @@
 # Copy this file to terraform.tfvars and fill in your values.
 # terraform.tfvars is gitignored — never commit secrets.
 
-project_id = "your-gcp-project-id"
-region     = "us-central1"
-image_tag  = "latest"
+project_id  = "your-gcp-project-id"
+region      = "southamerica-east1"
+image_tag   = "latest"
+
+# For CI deploy via GitHub Actions. Empty string disables CI setup.
+github_repo = "your-github-username/your-repo-name"
