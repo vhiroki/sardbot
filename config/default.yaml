@@ -1,0 +1,38 @@
+# Sardbot default configuration.
+#
+# Single source of truth for backtest parameters. CLI flags override these.
+
+market:
+  exchange: binance
+  symbol: "BTC/USDT"
+  timeframe: "1d"
+  since: "2018-01-01"
+
+backtest:
+  initial_capital: 10000.0
+  # 0.10% fee per side (Binance spot taker) + 0.05% slippage assumption.
+  fee_bps: 10.0
+  slippage_bps: 5.0
+  # Last 20% of dataset reserved as out-of-sample. DO NOT touch during dev.
+  oos_fraction: 0.2
+
+strategy:
+  default: sma_crossover
+  sma_crossover:
+    fast: 50
+    slow: 200
+  donchian_breakout:
+    entry: 20
+    exit_: 10
+    # null = no trend filter; 200 = Faber-style 200-day SMA gate
+    trend_filter_window: null
+
+risk:
+  # null = no stop-loss; 2.0 = Turtle "2N" rule (exit if price moves 2 × ATR
+  # against entry).
+  stop_loss_atr_multiple: null
+  atr_window: 14
+
+paths:
+  data_raw: "data/raw"
+  reports: "reports"

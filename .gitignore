@@ -1,0 +1,38 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Cached market data (reproducible by re-fetching)
+data/raw/*.parquet
+data/raw/*.csv
+
+# Local paper-trading state (lives in GCS in production)
+data/paper/
+
+# Reports
+reports/
+*.png
+*.html
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Terraform state and secrets (defense in depth — terraform/.gitignore also covers these)
+terraform/.terraform/
+terraform/*.tfstate*
+terraform/*.tfplan
+terraform/terraform.tfvars
+terraform/.terraform.lock.hcl
+
+# Pytest cache
+.pytest_cache/
+
+# OS
+.DS_Store

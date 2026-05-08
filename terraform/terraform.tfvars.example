@@ -1,0 +1,6 @@
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — never commit secrets.
+
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+image_tag  = "latest"
